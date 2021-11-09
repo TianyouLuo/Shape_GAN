@@ -65,7 +65,7 @@ class Discriminator(nn.Module):
             nn.Tanh(),
         )
         self.main2 = nn.Sequential(
-            # state size. (ndf*8) x 4 x 4
+            # state size. (ndf*8) x 3 x 4
             nn.Conv2d(self.hidden_chanels * 8, 1, [3, 4], 1, 0, bias=False),
             nn.Sigmoid(),
         )
@@ -119,7 +119,8 @@ class LSUNDecoder(nn.Module):
             nn.ReLU(True),
             # state size. (ngf) x 25 x 37
             nn.ConvTranspose2d(self.hidden_chanels, self.num_chanel, 6, 4, 1, [0, 2], bias=False),
-            nn.Tanh()
+            #nn.Tanh()
+            nn.Sigmoid()
             # state size. (nc) x 100 x 150
         )
 

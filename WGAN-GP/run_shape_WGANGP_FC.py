@@ -7,11 +7,11 @@ import numpy as np
 import glob
 import torch
 #import torchvision.datasets as datasets
-from DCGANAE_shape_v2 import DCGANAE, Discriminator
+#from DCGANAE_shape import DCGANAE, Discriminator
 #from experiments import reconstruct, sampling, sampling_eps, sampling_shape
 import pandas as pd
 # torch.backends.cudnn.enabled = False
-# from ShapeAutoencoder import ShapeAutoencoder
+from ShapeAutoencoder import ShapeAutoencoder, Discriminator
 from torch import optim
 #from torchvision import transforms
 from torchvision.utils import save_image
@@ -44,16 +44,16 @@ parser.add_argument("--num-projection", type=int, default=1000, help="number pro
 parser.add_argument("--lam", type=float, default=1, help="Regularization strength")
 parser.add_argument("--p", type=int, default=2, help="Norm p")
 parser.add_argument("--d_iter", type=int, default=10, help="number of discriminator iterations")
-parser.add_argument("--clip", type=float, default=0.01, help="clip value")
+#parser.add_argument("--clip", type=float, default=0.01, help="clip value")
 parser.add_argument("--r", type=float, default=1000, help="R")
 parser.add_argument("--kappa", type=float, default=50, help="R")
 parser.add_argument("--k", type=int, default=10, help="R")
-parser.add_argument("--e", type=float, default=1000, help="R")
+parser.add_argument("--LAMBDA", type=float, default=10, help="lambda for gradient penalty")
 parser.add_argument("--latent-size", type=int, default=32, help="Latent size")
 parser.add_argument("--hsize", type=int, default=100, help="h size")
 parser.add_argument("--dataset", type=str, default="MNIST", help="(MNIST|FMNIST)")
 parser.add_argument(
-    "--model-type", type=str, required=True, default="WGAN"
+    "--model-type", type=str, required=True, default="WGANGP"
 )
 args = parser.parse_args()
 
@@ -66,11 +66,11 @@ dataset = args.dataset
 image_size = 100 * 150
 num_chanel = 1
 d_iter = args.d_iter
-clip_value = args.clip
+#clip_value = args.clip
 
-if model_type == "WGAN":
+if model_type == "WGANGP":
     model_dir = os.path.join(
-            args.outdir, model_type + "_iter" + str(d_iter) + "_lr" + str(args.lr) + "_clip" + str(clip_value) + "_latent" + str(latent_size)
+            args.outdir, model_type + "_iter" + str(d_iter) + "_lr" + str(args.lr) + "_penal" + str(args.LAMBDA)
             )
 
 
@@ -116,9 +116,9 @@ if(dataset=='Yalin'):
     train_norm = train_data / pmax
     X = torch.tensor(train_norm, dtype=torch.float32).to(device)
     train_loader = torch.utils.data.DataLoader(X, batch_size=args.batch_size, shuffle=True)
-    model = DCGANAE(image_size, latent_size=latent_size, num_chanel=1, hidden_chanels=64, device=device).to(device)
-    dis = Discriminator(image_size, latent_size, 1, 64).to(device)
-    disoptimizer = optim.Adam(dis.parameters(), lr=args.lr, betas=(0.5, 0.999))
+    model = ShapeAutoencoder(image_size=image_size, latent_size=latent_size, hidden_size=100, device=device, LAMBDA = args.LAMBDA).to(device)
+    dis = Discriminator(image_size, latent_size, 1, hidden_size = 100).to(device)
+    disoptimizer = optim.RMSprop(dis.parameters(), lr=args.lr)
     
 #if model_type == "WGAN":
 #    # Dimension of transform_net is hidden_channels * 8 * dim of last layer in discriminator (h)
@@ -127,7 +127,9 @@ if(dataset=='Yalin'):
     # op_trannet = optim.Adam(transform_net.parameters(), lr=1e-4)
     # train_net(28 * 28, 1000, transform_net, op_trannet)
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
+
+
+optimizer = optim.RMSprop(model.parameters(), lr=args.lr)
 fixednoise = torch.randn((16, latent_size)).to(device)
 finalnoise = torch.randn((256, latent_size)).to(device)
 ite = 0
@@ -140,16 +142,19 @@ for epoch in range(args.epochs):
     # For each batch in the dataloader
         ## update D network
         j = 0
-        critic_iter = d_iter
+        if ite < 30 or ite % 500 == 0:
+            critic_iter = 25
+        else:
+            critic_iter = d_iter
         
         while j < critic_iter and i < len(train_loader):
             j += 1
             data = data_iter.next()
             i += 1
-            loss = model.compute_loss_WGAN(dis, disoptimizer, data, torch.randn)
+            loss = model.compute_loss_WGANGP(dis, disoptimizer, data, torch.randn)
             
-            for p in dis.parameters():
-                p.data = torch.clamp(p.data, -clip_value, clip_value)
+            #for p in dis.parameters():
+            #    p.data = torch.clamp(p.data, -clip_value, clip_value)
             
         ############################
         # (2) Update G network
@@ -163,7 +168,7 @@ for epoch in range(args.epochs):
         total_loss += loss.item()
         ite += 1
         
-        if ite % 100 == 0:
+        if ite % 50 == 0:
             total_loss /= ite + 1
             print("Epoch: " + str(epoch) + " Loss: " + str(total_loss))
             loss_list.append(total_loss)
@@ -186,8 +191,8 @@ for epoch in range(args.epochs):
 #                np.savetxt(model_dir + "/swd.csv", swd_list, delimiter=",")
 #                break
 #            model.train()
-#    total_loss /= ite + 1
-#    print("Epoch: " + str(epoch) + " Loss: " + str(total_loss))
+    #total_loss /= ite + 1
+    #print("Epoch: " + str(epoch) + " Loss: " + str(total_loss))
     
 #    if epoch % 10 == 0:
 #        model.eval()
@@ -215,11 +220,11 @@ for epoch in range(args.epochs):
 #                break
 #        model.train()
     #save_dmodel(model, optimizer, None, None, None, None, epoch, model_dir)
-    if (epoch % 200 == 0):
+    if (epoch % 50 == 0):
         model.eval()
-        samp = model.decoder(fixednoise).view(-1, 100 * 150)
+        samp = model.decoder(fixednoise).view(-1, image_size)
         samp_num = samp.detach().to('cpu').numpy()
-        samp_pd = pd.DataFrame(samp_num * pmax)
+        samp_pd = pd.DataFrame(samp_num)
         samp_pd.to_csv(model_dir+"/samp_epoch"+str(epoch)+".csv", index = False)
         model.train()
         

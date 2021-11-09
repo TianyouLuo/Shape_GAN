@@ -16,6 +16,7 @@ from gswnn import GSW_NN
 from ShapeAutoencoder import ShapeAutoencoder
 from torch import optim
 from torchvision import transforms
+from torchvision.utils import save_image
 from tqdm import tqdm
 from TransformNet import TransformNet
 from utils import circular_function, compute_true_Wasserstein, save_dmodel, sliced_wasserstein_distance
@@ -114,14 +115,17 @@ elif model_type == "MGSWNN" or model_type == "JMGSWNN":
     model_dir = os.path.join(args.outdir, model_type + "_size" + str(args.hsize))
 elif model_type == "MGSWD" or model_type == "JMGSWD":
     model_dir = os.path.join(args.outdir, model_type + "_" + args.g)
+
+save_dir = os.path.join(model_dir, "generated_images")
 if not (os.path.isdir(args.datadir)):
     os.makedirs(args.datadir)
 if not (os.path.isdir(args.outdir)):
     os.makedirs(args.outdir)
-if not (os.path.isdir(args.outdir)):
-    os.makedirs(args.outdir)
 if not (os.path.isdir(model_dir)):
     os.makedirs(model_dir)
+if not (os.path.isdir(save_dir)):
+    os.makedirs(save_dir)
+
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 print(
@@ -186,6 +190,7 @@ if model_type == "JMGSWD":
     opt_theta = torch.optim.Adam(transform_net.parameters(), lr=args.lr, betas=(0.5, 0.999))
 optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
 fixednoise = torch.randn((16, latent_size)).to(device)
+finalnoise = torch.randn((256, latent_size)).to(device)
 ite = 0
 wd_list = []
 swd_list = []
@@ -294,4 +299,17 @@ for epoch in range(args.epochs):
 #        )
 #        model.train()
 
+# store the final samples
+model.eval()
+samp_final = model.decoder(finalnoise)
+samp_final_num = samp_final.detach().to('cpu').numpy()
+for img in range(samp_final.shape[0]):
+    save_image(samp_final[img,:,:,:] * pmax, save_dir + "/img_" + str(img) + ".png", normalize=False)
+    samp_final_pd = pd.DataFrame(samp_final_num[img,0,:,:] * pmax)
+    samp_final_pd.to_csv(save_dir+"/img"+str(img)+".csv", index = False)
 
+# Only need to run one time: save original images as npy
+#for img in range(train_data.shape[0]):
+#    save_image(X[img,:,:,:] * pmax, "/pine/scr/t/i/tianyou/Yalin_GAN/data/train_npy" + "/img_" + str(img) + ".png", normalize=False)
+#    train_pd = pd.DataFrame(train_data[img,0,:,:])
+#    train_pd.to_csv("/pine/scr/t/i/tianyou/Yalin_GAN/data/train_npy"+"/img"+str(img)+".csv", index = False)

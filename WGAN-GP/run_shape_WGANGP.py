@@ -134,10 +134,9 @@ optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
 fixednoise = torch.randn((16, latent_size)).to(device)
 finalnoise = torch.randn((256, latent_size)).to(device)
 ite = 0
-wd_list = []
-swd_list = []
+loss_list = []
+total_loss = 0.0
 for epoch in range(args.epochs):
-    total_loss = 0.0
     data_iter = iter(train_loader)
     i = 0
     while i < len(train_loader):
@@ -166,6 +165,14 @@ for epoch in range(args.epochs):
         optimizer.step()
         total_loss += loss.item()
         ite += 1
+        
+        if ite % 100 == 0:
+            total_loss /= ite + 1
+            print("Epoch: " + str(epoch) + " Loss: " + str(total_loss))
+            loss_list.append(total_loss)
+            np.savetxt(model_dir + "/loss.csv", loss_list, delimiter=",")
+            total_loss = 0.0
+            ite = 0
         
 #        if ite % 100 == 0:
 #            model.eval()

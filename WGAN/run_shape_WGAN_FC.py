@@ -6,14 +6,14 @@ import os
 import numpy as np
 import glob
 import torch
-#import torchvision.datasets as datasets
-from DCGANAE_shape_v2 import DCGANAE, Discriminator
+import torchvision.datasets as datasets
+#from DCGANAE_shape_v2 import DCGANAE, Discriminator
 #from experiments import reconstruct, sampling, sampling_eps, sampling_shape
 import pandas as pd
 # torch.backends.cudnn.enabled = False
-# from ShapeAutoencoder import ShapeAutoencoder
+from ShapeAutoencoder import ShapeAutoencoder, Discriminator
 from torch import optim
-#from torchvision import transforms
+from torchvision import transforms
 from torchvision.utils import save_image
 from tqdm import tqdm
 #from TransformNet import TransformNet
@@ -92,6 +92,22 @@ print(
     )
 )
 # build training set data loaders
+if dataset == "MNIST":
+    image_size = 28 * 28
+    num_chanel = 1
+    datadir='/pine/scr/t/i/tianyou/Yalin_GAN/MNIST/'
+    train_loader = torch.utils.data.DataLoader(
+            datasets.MNIST(
+                datadir, train=True, download=True, transform=transforms.Compose([transforms.ToTensor()])
+            ),
+            batch_size=args.batch_size,
+            shuffle=True,
+            num_workers=args.num_workers,
+            )
+    model = ShapeAutoencoder(image_size=image_size, latent_size=latent_size, hidden_size=100, device=device).to(device)
+    dis = Discriminator(image_size, latent_size, 1, hidden_size = 100).to(device)
+    disoptimizer = optim.RMSprop(dis.parameters(), lr=args.lr)
+
 if(dataset=='Yalin'):
     datadir='/pine/scr/t/i/tianyou/Yalin_GAN/data/ADNIHippoCSV/'
     files = glob.glob(datadir+'/*.csv')
@@ -116,9 +132,10 @@ if(dataset=='Yalin'):
     train_norm = train_data / pmax
     X = torch.tensor(train_norm, dtype=torch.float32).to(device)
     train_loader = torch.utils.data.DataLoader(X, batch_size=args.batch_size, shuffle=True)
-    model = DCGANAE(image_size, latent_size=latent_size, num_chanel=1, hidden_chanels=64, device=device).to(device)
-    dis = Discriminator(image_size, latent_size, 1, 64).to(device)
-    disoptimizer = optim.Adam(dis.parameters(), lr=args.lr, betas=(0.5, 0.999))
+    model = ShapeAutoencoder(image_size=100 * 150, latent_size=latent_size, hidden_size=100, device=device).to(device)
+    dis = Discriminator(image_size, latent_size, 1, hidden_size = 100).to(device)
+    disoptimizer = optim.RMSprop(dis.parameters(), lr=args.lr)
+    #disoptimizer = optim.Adam(dis.parameters(), lr=args.lr, betas=(0.5, 0.999))
     
 #if model_type == "WGAN":
 #    # Dimension of transform_net is hidden_channels * 8 * dim of last layer in discriminator (h)
@@ -127,7 +144,8 @@ if(dataset=='Yalin'):
     # op_trannet = optim.Adam(transform_net.parameters(), lr=1e-4)
     # train_net(28 * 28, 1000, transform_net, op_trannet)
 
-optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
+#optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=(0.5, 0.999))
+optimizer = optim.RMSprop(model.parameters(), lr=args.lr)
 fixednoise = torch.randn((16, latent_size)).to(device)
 finalnoise = torch.randn((256, latent_size)).to(device)
 ite = 0
@@ -140,7 +158,10 @@ for epoch in range(args.epochs):
     # For each batch in the dataloader
         ## update D network
         j = 0
-        critic_iter = d_iter
+        if ite < 30 or ite % 500 == 0:
+            critic_iter = 25
+        else:
+            critic_iter = d_iter
         
         while j < critic_iter and i < len(train_loader):
             j += 1
@@ -156,14 +177,18 @@ for epoch in range(args.epochs):
         ###########################
         #data = data_iter.next()
         #i += 1
-        lossG = model.compute_loss_G(dis, data, torch.randn)
+        z_prior = torch.randn((data.shape[0], latent_size)).to(device)
+        data_fake = model.decoder(z_prior)
+        #y_fake, _ = discriminator(data_fake.detach())
+        y_fake = dis(data_fake)
+        lossG = -torch.mean(y_fake)
         optimizer.zero_grad()
         lossG.backward()
         optimizer.step()
         total_loss += loss.item()
         ite += 1
         
-        if ite % 100 == 0:
+        if ite % 50 == 0:
             total_loss /= ite + 1
             print("Epoch: " + str(epoch) + " Loss: " + str(total_loss))
             loss_list.append(total_loss)
@@ -215,11 +240,12 @@ for epoch in range(args.epochs):
 #                break
 #        model.train()
     #save_dmodel(model, optimizer, None, None, None, None, epoch, model_dir)
-    if (epoch % 200 == 0):
+    if (epoch % 100 == 0):
         model.eval()
-        samp = model.decoder(fixednoise).view(-1, 100 * 150)
+        samp = model.decoder(fixednoise).view(-1, image_size)
         samp_num = samp.detach().to('cpu').numpy()
-        samp_pd = pd.DataFrame(samp_num * pmax)
+        #samp_pd = pd.DataFrame(samp_num * pmax)
+        samp_pd = pd.DataFrame(samp_num)
         samp_pd.to_csv(model_dir+"/samp_epoch"+str(epoch)+".csv", index = False)
         model.train()
         

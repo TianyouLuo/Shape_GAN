@@ -36,14 +36,15 @@ class Decoder(nn.Module):
         self.hidden_size = hidden_size
         self.latent_size = latent_size
         self.main = nn.Sequential(
-            nn.Linear(latent_size, hidden_size),
+            nn.Linear(latent_size, hidden_size, bias=False),
             nn.ReLU(True),
-            nn.Linear(hidden_size,  4* hidden_size),
+            nn.Linear(hidden_size,  4* hidden_size, bias=False),
             nn.ReLU(True),
-            nn.Linear(4 * hidden_size, 16 * hidden_size),
+            nn.Linear(4 * hidden_size, 16 * hidden_size, bias=False),
             nn.ReLU(True),
-            nn.Linear(16 * hidden_size, self.image_size),
-            nn.ReLU(True),
+            nn.Linear(16 * hidden_size, self.image_size, bias=False),
+            #nn.ReLU(True),
+            nn.Sigmoid()
         )
 
     def forward(self, input):
